@@ -41,9 +41,19 @@ JetFind only reads information that a JetKVM exposes without a password: `GET /d
 
 A typical home /24 network is scanned in about 2 seconds.
 
-## Install and run (macOS)
+## Install (macOS)
 
-Requires [Go](https://go.dev) 1.27 or newer.
+Download `JetFind-<version>-macos.zip` from the [latest release](https://github.com/Stigern/JetFind/releases/latest), unzip it and move `JetFind.app` to Applications. The app is a universal binary for Apple Silicon and Intel Macs.
+
+The app is not notarized by Apple, so the first launch is blocked. To open it, go to System Settings › Privacy & Security and click **Open Anyway**. Or remove the download quarantine in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/JetFind.app
+```
+
+## Build from source (macOS)
+
+Requires [Go](https://go.dev) 1.27 or newer and the Xcode command line tools.
 
 ```bash
 git clone https://github.com/Stigern/JetFind.git
@@ -54,7 +64,7 @@ open JetFind.app
 
 The first time it runs, macOS asks whether JetFind may find devices on your local network. Choose **Allow**, or no devices will be found. You can change this later in System Settings › Privacy & Security › Local Network. While macOS is still waiting for your answer, JetFind keeps retrying instead of reporting an empty network.
 
-`build-mac.sh` installs the [`fyne`](https://docs.fyne.io) packaging tool if needed, builds `JetFind.app`, adds the Local Network usage description that macOS requires, and signs the app ad hoc.
+`build-mac.sh` installs the [`fyne`](https://docs.fyne.io) packaging tool if needed, builds `JetFind.app`, adds the Local Network usage description that macOS requires, makes it a universal binary (Apple Silicon + Intel), and signs it ad hoc.
 
 ### Windows and Linux
 
