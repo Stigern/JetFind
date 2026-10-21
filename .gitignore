@@ -1,0 +1,12 @@
+# build output
+JetFind.app/
+/JetFind
+/jetfind
+*.exe
+*.tar.xz
+fyne-cross/
+
+# brainstorming mockups
+.superpowers/
+
+.DS_Store
