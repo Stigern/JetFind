@@ -23,6 +23,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"jetfind/scan"
+	"jetfind/store"
 )
 
 // While macOS waits for the user to grant Local Network access, every
@@ -47,11 +48,12 @@ type ui struct {
 	hint     *canvas.Text
 	empty    fyne.CanvasObject
 
-	devices []scan.Device
-	status  map[string]deviceStatus // keyed by IP
-	latest  string                  // newest firmware release on GitHub
-	cards   []*deviceCard
+	store   *store.Store
+	cards   []*deviceCard                     // favourites first, then by IP
+	byKey   map[string]*deviceCard            // store.Key → card
 	holders map[*deviceCard]fyne.CanvasObject // slide-in wrappers
+	latest  string                            // newest firmware release on GitHub
+	found   int                               // devices found by the current scan
 	cancel  context.CancelFunc
 	demo    bool // JETFIND_DEMO=1: show sample devices, touch no network
 }
@@ -62,7 +64,7 @@ func main() {
 	a.SetIcon(appIcon)
 	w := a.NewWindow("JetFind")
 
-	u := &ui{app: a, status: map[string]deviceStatus{}}
+	u := &ui{app: a, byKey: map[string]*deviceCard{}, holders: map[*deviceCard]fyne.CanvasObject{}}
 	w.SetContent(u.build())
 	w.Resize(fyne.NewSize(400, 600))
 	w.SetOnClosed(func() {
@@ -71,8 +73,11 @@ func main() {
 		}
 	})
 	if os.Getenv("JETFIND_DEMO") != "" {
+		u.store = store.Open(memPrefs{})
 		u.showDemo()
 	} else {
+		u.store = store.Open(a.Preferences())
+		u.loadFavorites()
 		u.startScan()
 		go u.checkRelease()
 		go func() {
@@ -83,6 +88,12 @@ func main() {
 	}
 	w.ShowAndRun()
 }
+
+// memPrefs keeps demo-mode changes out of the real preferences.
+type memPrefs map[string]string
+
+func (m memPrefs) String(k string) string { return m[k] }
+func (m memPrefs) SetString(k, v string)  { m[k] = v }
 
 // showDemo fills the window with made-up devices, for screenshots that must
 // not reveal a real network.
@@ -98,26 +109,37 @@ func (u *ui) showDemo() {
 	}
 	day := 24 * time.Hour
 	devices := []struct {
-		dev  scan.Device
-		info scan.Info
-		mac  string
-		hist []time.Duration
+		dev    scan.Device
+		info   scan.Info
+		online bool
+		fav    bool
+		name   string
+		hist   []time.Duration
 	}{
-		{scan.Device{Name: "jetkvm-office", IP: "192.168.1.21"},
+		{scan.Device{Name: "jetkvm-office", IP: "192.168.1.21", MAC: "30:52:53:00:1a:2b"},
 			scan.Info{Version: "0.6.0", Uptime: 12*day + 5*time.Hour, IsSetup: true, ClockKnown: true, ClockSynced: true},
-			"30:52:53:00:1a:2b", ms(3, 3, 4, 3, 2, 3, 5, 3, 3, 4, 3, 3, 2, 3, 3, 4, 3, 3)},
-		{scan.Device{Name: "jetkvm-rack", IP: "192.168.1.22"},
+			true, true, "Office PC", ms(3, 3, 4, 3, 2, 3, 5, 3, 3, 4, 3, 3, 2, 3, 3, 4, 3, 3)},
+		{scan.Device{Name: "jetkvm-rack", IP: "192.168.1.22", MAC: "30:52:53:00:3c:4d"},
 			scan.Info{Version: "0.6.0", Uptime: 3*day + 9*time.Hour, IsSetup: true, ClockKnown: true, ClockSynced: true, ActiveClient: "192.168.1.50"},
-			"30:52:53:00:3c:4d", ms(4, 5, 4, 6, 9, 5, 4, 4, 5, 7, 4, 4, 5, 4, 6, 5, 4, 5)},
-		{scan.Device{Name: "jetkvm-lab", IP: "192.168.1.23"},
+			true, true, "", ms(4, 5, 4, 6, 9, 5, 4, 4, 5, 7, 4, 4, 5, 4, 6, 5, 4, 5)},
+		{scan.Device{Name: "jetkvm-garage", IP: "192.168.1.24", MAC: "30:52:53:00:7a:8b"},
+			scan.Info{}, false, true, "Garage NAS", nil},
+		{scan.Device{Name: "jetkvm-lab", IP: "192.168.1.23", MAC: "30:52:53:00:5e:6f"},
 			scan.Info{Version: "0.5.9", Uptime: 41*day + 2*time.Hour, IsSetup: true, CloudConnected: true, ClockKnown: true, ClockSynced: true},
-			"30:52:53:00:5e:6f", ms(6, 5, 7, 6, 12, 8, 6, 6, 7, 6, 5, 6, 9, 7, 6, 6, 5, 6)},
+			true, false, "", ms(6, 5, 7, 6, 12, 8, 6, 6, 7, 6, 5, 6, 9, 7, 6, 6, 5, 6)},
 	}
 	for _, d := range devices {
-		st := d.hist[len(d.hist)-1]
-		d.info.Latency = st
-		u.status[d.dev.IP] = deviceStatus{info: d.info, known: true, online: true, history: d.hist, mac: d.mac, latest: u.latest}
-		u.add(d.dev)
+		e := entryOf(d.dev)
+		u.store.SetFavorite(e, d.fav)
+		u.store.SetName(e, d.name)
+		c := u.ensureCard(d.dev)
+		st := deviceStatus{known: true, online: d.online, mac: d.dev.MAC, latest: u.latest, lastSeen: time.Now().Add(-3 * time.Hour)}
+		if d.online {
+			d.info.Latency = d.hist[len(d.hist)-1]
+			st.info, st.history, st.lastSeen = d.info, d.hist, time.Now()
+			u.found++
+		}
+		c.setStatus(st)
 	}
 	u.finish("192.168.1.0/24")
 }
@@ -136,41 +158,55 @@ func (u *ui) checkRelease() {
 	}
 }
 
-// refreshAll fetches live status for every listed device.
-func (u *ui) refreshAll() {
-	for _, d := range u.devices {
-		u.refresh(d)
+// loadFavorites shows saved favourites straight away, before any scan.
+func (u *ui) loadFavorites() {
+	for _, e := range u.store.Favorites() {
+		c := u.ensureCard(scan.Device{Name: e.Hostname, IP: e.IP, URL: "http://" + e.IP, MAC: e.MAC})
+		c.status.lastSeen = e.LastSeen
+		u.refresh(c)
 	}
 }
 
-// refresh fetches live status for d in the background and updates its card.
-func (u *ui) refresh(d scan.Device) {
+// refreshAll fetches live status for every listed device.
+func (u *ui) refreshAll() {
+	for _, c := range u.cards {
+		u.refresh(c)
+	}
+}
+
+// refresh fetches live status for c in the background and updates it.
+func (u *ui) refresh(c *deviceCard) {
 	if u.demo {
 		return
 	}
+	d := c.dev
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
 		info, online := scan.FetchInfo(ctx, d)
 		mac := scan.MACAddress(d.IP)
+		// A favourite may have moved; then its old IP belongs to someone else.
+		if online && d.MAC != "" && mac != "" && !strings.EqualFold(mac, d.MAC) {
+			online = false
+		}
 		fyne.Do(func() {
-			hist := u.status[d.IP].history
+			if u.byKey[c.key] != c || c.dev.IP != d.IP {
+				return // card removed or moved while we were fetching
+			}
+			st := c.status
+			st.info, st.known, st.online, st.latest = info, true, online, u.latest
+			if mac != "" && online {
+				st.mac = mac
+			}
 			if online {
-				hist = append(hist, info.Latency)
-				if len(hist) > sparkSamples {
-					hist = hist[len(hist)-sparkSamples:]
+				st.lastSeen = time.Now()
+				st.history = append(st.history, info.Latency)
+				if len(st.history) > sparkSamples {
+					st.history = st.history[len(st.history)-sparkSamples:]
 				}
+				u.store.Seen(entryOf(d), st.lastSeen)
 			}
-			if mac == "" {
-				mac = u.status[d.IP].mac
-			}
-			st := deviceStatus{info: info, known: true, online: online, history: hist, mac: mac, latest: u.latest}
-			u.status[d.IP] = st
-			for _, c := range u.cards {
-				if c.dev.IP == d.IP {
-					c.setStatus(st)
-				}
-			}
+			c.setStatus(st)
 		})
 	}()
 }
@@ -209,7 +245,7 @@ func (u *ui) build() fyne.CanvasObject {
 	u.empty = container.NewVBox(layout.NewSpacer(), emptyTitle, emptyBody, layout.NewSpacer())
 	u.empty.Hide()
 
-	u.hint = canvas.NewText("Double-click to open in your browser", colFaint)
+	u.hint = canvas.NewText("Double-click to open · ☆ to keep as favorite", colFaint)
 	u.hint.TextSize = 11
 	u.hint.Alignment = fyne.TextAlignCenter
 	u.hint.Hide()
@@ -221,7 +257,8 @@ func (u *ui) build() fyne.CanvasObject {
 	return container.New(layout.NewCustomPaddedLayout(14, 12, 16, 16), content)
 }
 
-// startScan clears the list and scans every local subnet in the background.
+// startScan drops non-favourite cards and scans every local subnet in the
+// background. Favourites stay and are updated if found.
 func (u *ui) startScan() {
 	if u.cancel != nil {
 		u.cancel()
@@ -229,14 +266,14 @@ func (u *ui) startScan() {
 	ctx, cancel := context.WithCancel(context.Background())
 	u.cancel = cancel
 
-	for _, c := range u.cards {
-		c.stop()
+	for _, c := range append([]*deviceCard(nil), u.cards...) {
+		if !c.favorite {
+			u.remove(c)
+		}
 	}
-	u.devices, u.cards, u.holders = nil, nil, nil
-	u.status = map[string]deviceStatus{}
-	u.list.RemoveAll()
+	u.found = 0
+	u.relayout()
 	u.empty.Hide()
-	u.hint.Hide()
 	u.button.setBusy(true, "Scanning…")
 	u.bar.set(0)
 	u.bar.Show()
@@ -296,14 +333,16 @@ func (u *ui) finish(netLabel string) {
 	u.bar.shimmer(false)
 	u.bar.Hide()
 	u.button.setBusy(false, "Scan")
-	switch n := len(u.devices); n {
+	if len(u.cards) == 0 {
+		u.empty.Show()
+	}
+	switch u.found {
 	case 0:
 		u.setSubtitle("No devices found")
-		u.empty.Show()
 	case 1:
 		u.setSubtitle("1 device found · " + netLabel)
 	default:
-		u.setSubtitle(fmt.Sprintf("%d devices found · %s", n, netLabel))
+		u.setSubtitle(fmt.Sprintf("%d devices found · %s", u.found, netLabel))
 	}
 }
 
@@ -312,34 +351,105 @@ func (u *ui) setSubtitle(s string) {
 	u.subtitle.Refresh()
 }
 
-// add inserts a device card, keeping the list sorted by IP address.
+// add shows a device found by the scan, updating its card if it already
+// has one (a favourite, possibly at a new IP).
 func (u *ui) add(d scan.Device) {
-	u.devices = append(u.devices, d)
-	sort.Slice(u.devices, func(i, j int) bool { return ipLess(u.devices[i].IP, u.devices[j].IP) })
-	u.cards = append(u.cards, newDeviceCard(d, u.status[d.IP], u.open))
-	sort.Slice(u.cards, func(i, j int) bool { return ipLess(u.cards[i].dev.IP, u.cards[j].dev.IP) })
-	if u.holders == nil {
-		u.holders = map[*deviceCard]fyne.CanvasObject{}
+	u.found++
+	c := u.ensureCard(d)
+	u.store.Seen(entryOf(d), time.Now())
+	u.refresh(c)
+}
+
+// ensureCard returns the card for d, creating it if needed, and updates the
+// card's address and saved name/favourite state.
+func (u *ui) ensureCard(d scan.Device) *deviceCard {
+	if d.URL == "" {
+		d.URL = "http://" + d.IP
 	}
-	for _, c := range u.cards {
-		if u.holders[c] == nil {
-			u.holders[c] = slideIn(c)
+	key := store.Key(d.MAC, d.IP)
+	saved, _ := u.store.Get(key)
+	if d.Name == "" || d.Name == "JetKVM" && saved.Hostname != "" {
+		d.Name = saved.Hostname
+	}
+	if d.Name == "" {
+		d.Name = "JetKVM"
+	}
+	c := u.byKey[key]
+	if c == nil {
+		c = newDeviceCard(key, d, deviceStatus{mac: d.MAC, lastSeen: saved.LastSeen}, cardActions{
+			open:     u.open,
+			favorite: u.toggleFavorite,
+			rename:   u.rename,
+		})
+		u.byKey[key] = c
+		u.cards = append(u.cards, c)
+		u.holders[c] = slideIn(c)
+	}
+	c.setIdentity(d, saved.Name, saved.Favorite)
+	u.relayout()
+	return c
+}
+
+func (u *ui) remove(c *deviceCard) {
+	c.stop()
+	delete(u.byKey, c.key)
+	delete(u.holders, c)
+	for i, x := range u.cards {
+		if x == c {
+			u.cards = append(u.cards[:i], u.cards[i+1:]...)
+			break
 		}
 	}
+}
+
+// relayout sorts the cards (favourites first, then by IP) and redraws.
+func (u *ui) relayout() {
+	sort.SliceStable(u.cards, func(i, j int) bool {
+		a, b := u.cards[i], u.cards[j]
+		if a.favorite != b.favorite {
+			return a.favorite
+		}
+		return ipLess(a.dev.IP, b.dev.IP)
+	})
 	objs := make([]fyne.CanvasObject, len(u.cards))
 	for i, c := range u.cards {
 		objs[i] = u.holders[c]
 	}
 	u.list.Objects = objs
 	u.list.Refresh()
-	u.hint.Show()
-	u.refresh(d)
+	if len(u.cards) > 0 {
+		u.hint.Show()
+		u.empty.Hide()
+	} else {
+		u.hint.Hide()
+	}
 }
 
-func (u *ui) open(d scan.Device) {
-	if link, err := url.Parse(d.URL); err == nil {
+func (u *ui) toggleFavorite(c *deviceCard) {
+	u.store.SetFavorite(entryOf(c.dev), !c.favorite)
+	c.setIdentity(c.dev, c.custom, !c.favorite)
+	u.relayout()
+}
+
+func (u *ui) rename(c *deviceCard, name string) {
+	u.store.SetName(entryOf(c.dev), name)
+	saved, _ := u.store.Get(c.key)
+	c.setIdentity(c.dev, saved.Name, c.favorite)
+}
+
+func (u *ui) open(c *deviceCard) {
+	if link, err := url.Parse(c.dev.URL); err == nil {
 		u.app.OpenURL(link)
 	}
+}
+
+// entryOf describes d for the store.
+func entryOf(d scan.Device) store.Entry {
+	host := d.Name
+	if host == "JetKVM" {
+		host = ""
+	}
+	return store.Entry{MAC: d.MAC, IP: d.IP, Hostname: host}
 }
 
 func ipLess(a, b string) bool {

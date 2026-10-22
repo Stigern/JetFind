@@ -16,6 +16,10 @@
 
 JetFind scans your local network for JetKVM devices and lists them, so you don't have to remember IP addresses. Double-click a card to open that JetKVM's web UI in your default browser.
 
+- **Favorites**: click the ☆ on a card to keep it. Favorites stay at the top, show up immediately when JetFind starts, and remain in the list when they're offline, with when they were last seen.
+- **Custom names**: hover a card and click the pencil to rename it in place. Enter saves, Esc cancels, and an empty name restores the hostname.
+- Favorites and names follow the device's MAC address, so they survive the router handing out a new IP.
+
 Each card shows live status, refreshed every 5 seconds:
 
 - **Ping**: connection time to the device, with a small graph of recent values. Green under 30 ms, yellow under 150 ms, red above.
@@ -81,10 +85,11 @@ go run ./tools/makeicon Icon.png   # regenerate the app icon
 | Path | Contents |
 | --- | --- |
 | `main.go` | Window, scanning flow, live refresh |
-| `card.go` | Device card |
+| `card.go`, `controls.go` | Device card, star and pencil buttons, inline name editor |
 | `effects.go`, `shaders.go` | Status dot, ping graph, slide-in, GLSL shaders for the card panel and the Scan button |
 | `theme.go` | Colour palette and Fyne theme |
 | `scan/` | Network scanning, JetKVM detection, `/metrics` parsing, GitHub release check, ARP lookup |
+| `store/` | Saved favorites and custom names |
 | `tools/makeicon/` | Icon generator |
 
 JetFind is an independent project and is not affiliated with JetKVM.

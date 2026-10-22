@@ -15,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"jetfind/scan"
+	"jetfind/store"
 )
 
 // deviceStatus is the latest live info for a device; known is false until
@@ -25,17 +26,34 @@ type deviceStatus struct {
 	history       []time.Duration // recent latencies, oldest first
 	mac           string          // from the local ARP table
 	latest        string          // newest firmware on GitHub, if known
+	lastSeen      time.Time       // when the device last answered
 }
 
 // iconTile is the shared gradient background for device icons (2x for HiDPI).
 var iconTile = gradientTile(76, 18, colAccent, colAccent2)
 
+// cardActions are the callbacks a card raises.
+type cardActions struct {
+	open     func(*deviceCard)
+	favorite func(*deviceCard)
+	rename   func(c *deviceCard, name string)
+}
+
 // deviceCard shows one JetKVM on a shaded panel. A double tap opens it.
 type deviceCard struct {
 	widget.BaseWidget
-	dev    scan.Device
-	status deviceStatus
-	onOpen func(scan.Device)
+	key      string // store.Key of the device
+	dev      scan.Device
+	status   deviceStatus
+	favorite bool
+	custom   string // user-given name, empty for the hostname
+	act      cardActions
+
+	nameTx *canvas.Text
+	ipTx   *canvas.Text
+	editor *nameEntry
+	pencil *iconButton
+	star   *iconButton
 
 	glass   *canvas.Shader
 	dot     *statusDot
@@ -55,10 +73,57 @@ type deviceCard struct {
 
 const cardRadius = 14
 
-func newDeviceCard(dev scan.Device, st deviceStatus, onOpen func(scan.Device)) *deviceCard {
-	c := &deviceCard{dev: dev, status: st, onOpen: onOpen}
+func newDeviceCard(key string, dev scan.Device, st deviceStatus, act cardActions) *deviceCard {
+	c := &deviceCard{key: key, dev: dev, status: st, act: act}
 	c.ExtendBaseWidget(c)
 	return c
+}
+
+// title is the name shown in bold: the custom name, else the hostname.
+func (c *deviceCard) title() string {
+	if c.custom != "" {
+		return c.custom
+	}
+	return c.dev.Name
+}
+
+// setIdentity updates what the card shows about who the device is.
+func (c *deviceCard) setIdentity(dev scan.Device, custom string, favorite bool) {
+	c.dev, c.custom, c.favorite = dev, custom, favorite
+	if c.nameTx == nil {
+		return
+	}
+	c.nameTx.Text = c.title()
+	c.ipTx.Text = dev.IP
+	if custom != "" {
+		c.ipTx.Text = dev.IP + " · " + dev.Name
+	}
+	c.star.setIcon(starOff)
+	if favorite {
+		c.star.setIcon(starOn)
+	}
+	c.nameTx.Refresh()
+	c.ipTx.Refresh()
+}
+
+// startRename swaps the name for an editor.
+func (c *deviceCard) startRename() {
+	c.editor.start(c.custom)
+	c.editor.SetPlaceHolder(c.dev.Name)
+	c.nameTx.Hide()
+	c.pencil.Hide()
+	c.editor.Show()
+	if cv := fyne.CurrentApp().Driver().CanvasForObject(c); cv != nil {
+		cv.Focus(c.editor)
+	}
+}
+
+func (c *deviceCard) endRename(name string, ok bool) {
+	c.editor.Hide()
+	c.nameTx.Show()
+	if ok {
+		c.act.rename(c, name)
+	}
 }
 
 func (c *deviceCard) CreateRenderer() fyne.WidgetRenderer {
@@ -78,12 +143,21 @@ func (c *deviceCard) CreateRenderer() fyne.WidgetRenderer {
 	iconBox := container.NewGridWrap(fyne.NewSize(38, 38),
 		container.NewStack(tile, container.New(layout.NewCustomPaddedLayout(8, 8, 8, 8), icon)))
 
-	name := canvas.NewText(c.dev.Name, colText)
-	name.TextStyle = fyne.TextStyle{Bold: true}
-	name.TextSize = 14
-	ip := canvas.NewText(c.dev.IP, colMuted)
-	ip.TextStyle = fyne.TextStyle{Monospace: true}
-	ip.TextSize = 11
+	c.nameTx = canvas.NewText("", colText)
+	c.nameTx.TextStyle = fyne.TextStyle{Bold: true}
+	c.nameTx.TextSize = 14
+	c.editor = newNameEntry()
+	c.editor.onDone = c.endRename
+	c.editor.Hide()
+	c.pencil = newIconButton(pencil, 14, c.startRename)
+	c.pencil.Hide()
+	name := container.NewBorder(nil, nil, nil,
+		container.NewCenter(c.pencil),
+		container.NewStack(container.NewHBox(c.nameTx), c.editor))
+	c.ipTx = canvas.NewText("", colMuted)
+	c.ipTx.TextStyle = fyne.TextStyle{Monospace: true}
+	c.ipTx.TextSize = 11
+	c.star = newIconButton(starOff, 18, func() { c.act.favorite(c) })
 	c.details = canvas.NewText("", colMuted)
 	c.details.TextSize = 11
 
@@ -98,7 +172,7 @@ func (c *deviceCard) CreateRenderer() fyne.WidgetRenderer {
 	c.update, c.updTx = newPill(colWarn, colWarn)
 	c.pills = container.New(layout.NewCustomPaddedHBoxLayout(6), c.inUse, c.update)
 
-	texts := container.New(layout.NewCustomPaddedVBoxLayout(2), name, ip, c.details, hw,
+	texts := container.New(layout.NewCustomPaddedVBoxLayout(2), name, c.ipTx, c.details, hw,
 		container.New(layout.NewCustomPaddedLayout(3, 0, 0, 0), c.pills))
 
 	c.dot = newStatusDot()
@@ -107,7 +181,7 @@ func (c *deviceCard) CreateRenderer() fyne.WidgetRenderer {
 	c.ping.TextStyle = fyne.TextStyle{Monospace: true, Bold: true}
 	c.spark = newSparkline()
 	right := container.New(layout.NewCustomPaddedVBoxLayout(2),
-		container.NewHBox(layout.NewSpacer(), c.dot, c.ping),
+		container.NewHBox(layout.NewSpacer(), c.dot, c.ping, container.NewCenter(c.star)),
 		c.spark)
 
 	row := container.NewBorder(nil, nil,
@@ -116,6 +190,7 @@ func (c *deviceCard) CreateRenderer() fyne.WidgetRenderer {
 		texts)
 	padded := container.New(layout.NewCustomPaddedLayout(13, 13, 14, 12), row)
 
+	c.setIdentity(c.dev, c.custom, c.favorite)
 	c.applyStatus()
 	return widget.NewSimpleRenderer(container.New(shaderStack{}, shadow, c.glass, padded))
 }
@@ -160,6 +235,11 @@ func (c *deviceCard) applyStatus() {
 
 	var parts []string
 	c.details.Color = colMuted
+	c.nameTx.Color = colText
+	if st.known && !st.online {
+		c.nameTx.Color = colMuted
+		parts = append(parts, "last seen "+store.Ago(st.lastSeen, time.Now()))
+	}
 	if st.known && st.online {
 		if !st.info.IsSetup {
 			parts = append(parts, "Not set up")
@@ -199,7 +279,7 @@ func (c *deviceCard) applyStatus() {
 		c.pills.Hide()
 	}
 
-	for _, t := range []*canvas.Text{c.ping, c.details, c.mac, c.clock} {
+	for _, t := range []*canvas.Text{c.nameTx, c.ping, c.details, c.mac, c.clock} {
 		t.Refresh()
 	}
 }
@@ -261,11 +341,14 @@ func formatUptime(d time.Duration) string {
 func (c *deviceCard) DoubleTapped(*fyne.PointEvent) {
 	c.glass.Uniforms["flash"] = 1
 	animateUniform(&c.flashAnim, c.glass, "flash", 0, 450*time.Millisecond)
-	c.onOpen(c.dev)
+	c.act.open(c)
 }
 
 func (c *deviceCard) MouseIn(*desktop.MouseEvent) {
 	animateUniform(&c.hoverAnim, c.glass, "hover", 1, 200*time.Millisecond)
+	if !c.editor.Visible() {
+		c.pencil.Show()
+	}
 }
 
 func (c *deviceCard) MouseMoved(*desktop.MouseEvent) {}
@@ -285,6 +368,7 @@ func (c *deviceCard) MouseUp(*desktop.MouseEvent) {}
 
 func (c *deviceCard) MouseOut() {
 	animateUniform(&c.hoverAnim, c.glass, "hover", 0, 300*time.Millisecond)
+	c.pencil.Hide()
 }
 
 func (c *deviceCard) Cursor() desktop.Cursor { return desktop.PointerCursor }

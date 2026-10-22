@@ -20,6 +20,7 @@ type Device struct {
 	Name string // reverse-DNS hostname, or "JetKVM" when there is none
 	IP   string
 	URL  string
+	MAC  string // from the ARP table; empty if unavailable
 }
 
 const (
@@ -129,7 +130,8 @@ func probe(ctx context.Context, host string) (Device, bool, dialResult) {
 		return Device{}, false, answered
 	}
 	ip, _, _ := net.SplitHostPort(addr)
-	return Device{Name: lookupName(ctx, ip), IP: ip, URL: base}, true, answered
+	// The TCP connect above put ip in the ARP table.
+	return Device{Name: lookupName(ctx, ip), IP: ip, URL: base, MAC: MACAddress(ip)}, true, answered
 }
 
 // isJetKVM asks the unauthenticated /device/status endpoint, which answers
