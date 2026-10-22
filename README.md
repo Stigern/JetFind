@@ -27,7 +27,7 @@ Each card shows live status, refreshed every 5 seconds:
 - **Uptime** since the JetKVM software last started.
 - **In use by …** when someone has an active remote session open, and from which IP.
 - **MAC address**, read from your computer's ARP table.
-- **Clock sync**: `NTP ✓` when the device's clock is synchronised.
+- **Clock sync**: `NTP ok` when the device's clock is synchronised.
 - **Not set up** for devices that haven't completed first-time setup, and **cloud** when JetKVM Cloud is connected.
 
 ## No login needed

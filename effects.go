@@ -53,37 +53,39 @@ func gradientTile(size int, radius float64, from, to color.NRGBA) image.Image {
 	return img
 }
 
-// statusDot is a small coloured dot with an optional radar-style pulse ring.
+// statusDot is a small coloured dot that sends out one radar-style ring
+// each time pulse is called. It is idle between pulses, so a window full of
+// devices does not repaint continuously.
 type statusDot struct {
 	widget.BaseWidget
 	dot, halo *canvas.Circle
 	col       color.Color
-	pulse     float32
+	phase     float32 // 0→1 during a pulse; 1 when idle (ring invisible)
 	anim      *fyne.Animation
 }
 
 func newStatusDot() *statusDot {
-	s := &statusDot{dot: canvas.NewCircle(colFaint), halo: canvas.NewCircle(color.Transparent), col: colFaint}
+	s := &statusDot{dot: canvas.NewCircle(colFaint), halo: canvas.NewCircle(color.Transparent), col: colFaint, phase: 1}
 	s.ExtendBaseWidget(s)
 	return s
 }
 
-// set changes the colour and starts or stops the pulse.
-func (s *statusDot) set(c color.Color, pulsing bool) {
+// set changes the colour.
+func (s *statusDot) set(c color.Color) {
 	s.col = c
 	s.dot.FillColor = c
 	s.dot.Refresh()
-	if pulsing && s.anim == nil {
-		s.anim = fyne.NewAnimation(1800*time.Millisecond, func(v float32) {
-			s.pulse = v
-			s.layoutHalo()
-		})
-		s.anim.Curve = fyne.AnimationEaseOut
-		s.anim.RepeatCount = fyne.AnimationRepeatForever
-		s.anim.Start()
-	} else if !pulsing {
-		s.stop()
-	}
+}
+
+// pulse sends out a single ring.
+func (s *statusDot) pulse() {
+	s.stop()
+	s.anim = fyne.NewAnimation(1400*time.Millisecond, func(v float32) {
+		s.phase = v
+		s.layoutHalo()
+	})
+	s.anim.Curve = fyne.AnimationEaseOut
+	s.anim.Start()
 }
 
 func (s *statusDot) stop() {
@@ -91,17 +93,17 @@ func (s *statusDot) stop() {
 		s.anim.Stop()
 		s.anim = nil
 	}
-	s.pulse = 1
+	s.phase = 1
 	s.layoutHalo()
 }
 
 func (s *statusDot) layoutHalo() {
 	size := s.Size()
 	cx, cy := size.Width/2, size.Height/2
-	r := 4 + s.pulse*7
+	r := 4 + s.phase*7
 	s.halo.Move(fyne.NewPos(cx-r, cy-r))
 	s.halo.Resize(fyne.NewSize(2*r, 2*r))
-	s.halo.FillColor = withAlpha(s.col, 0.55*(1-s.pulse))
+	s.halo.FillColor = withAlpha(s.col, 0.55*(1-s.phase))
 	s.halo.Refresh()
 }
 
@@ -121,18 +123,27 @@ func (r *statusDotRenderer) Objects() []fyne.CanvasObject {
 }
 func (r *statusDotRenderer) Destroy() {}
 
-// sparkline draws recent latency samples as a tiny line chart.
+// sparkline draws recent latency samples as a tiny line chart. Its line
+// segments are created once and reused.
 type sparkline struct {
 	widget.BaseWidget
 	values []time.Duration
 	col    color.Color
-	lines  []fyne.CanvasObject
+	segs   []*canvas.Line
+	objs   []fyne.CanvasObject
 }
 
 const sparkSamples = 24
 
 func newSparkline() *sparkline {
 	s := &sparkline{col: colOnline}
+	for range sparkSamples - 1 {
+		l := canvas.NewLine(color.Transparent)
+		l.StrokeWidth = 1.5
+		l.Hide()
+		s.segs = append(s.segs, l)
+		s.objs = append(s.objs, l)
+	}
 	s.ExtendBaseWidget(s)
 	return s
 }
@@ -148,8 +159,10 @@ type sparkRenderer struct{ s *sparkline }
 
 func (r *sparkRenderer) Layout(size fyne.Size) {
 	s := r.s
-	s.lines = s.lines[:0]
 	v := s.values
+	for i, l := range s.segs {
+		l.Hidden = i >= len(v)-1
+	}
 	if len(v) < 2 {
 		return
 	}
@@ -164,15 +177,14 @@ func (r *sparkRenderer) Layout(size fyne.Size) {
 		return fyne.NewPos(x0+step*float32(i), y)
 	}
 	for i := 1; i < len(v); i++ {
-		l := canvas.NewLine(withAlpha(s.col, 0.35+0.65*float32(i)/float32(len(v))))
-		l.StrokeWidth = 1.5
+		l := s.segs[i-1]
+		l.StrokeColor = withAlpha(s.col, 0.35+0.65*float32(i)/float32(len(v)))
 		l.Position1, l.Position2 = pt(i-1), pt(i)
-		s.lines = append(s.lines, l)
 	}
 }
 func (r *sparkRenderer) MinSize() fyne.Size           { return fyne.NewSize(64, 18) }
 func (r *sparkRenderer) Refresh()                     { r.Layout(r.s.Size()); canvas.Refresh(r.s) }
-func (r *sparkRenderer) Objects() []fyne.CanvasObject { return r.s.lines }
+func (r *sparkRenderer) Objects() []fyne.CanvasObject { return r.s.objs }
 func (r *sparkRenderer) Destroy()                     {}
 
 // offsetLayout draws its single child shifted down by dy; animating dy gives

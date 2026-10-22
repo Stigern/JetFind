@@ -208,9 +208,14 @@ func (c *deviceCard) stop() {
 }
 
 // setStatus updates the live info shown on the card.
+// A fresh successful ping makes the status dot pulse once.
 func (c *deviceCard) setStatus(st deviceStatus) {
+	fresh := st.online && st.lastSeen.After(c.status.lastSeen)
 	c.status = st
 	c.applyStatus()
+	if fresh && c.dot != nil {
+		c.dot.pulse()
+	}
 }
 
 func (c *deviceCard) applyStatus() {
@@ -222,13 +227,13 @@ func (c *deviceCard) applyStatus() {
 	switch {
 	case !st.known:
 		col, c.ping.Text = colFaint, "…"
-		c.dot.set(col, false)
+		c.dot.set(col)
 	case !st.online:
 		col, c.ping.Text = colOffline, "offline"
-		c.dot.set(col, false)
+		c.dot.set(col)
 	default:
 		col, c.ping.Text = latencyColor(st.info.Latency), formatLatency(st.info.Latency)
-		c.dot.set(col, true)
+		c.dot.set(col)
 	}
 	c.ping.Color = col
 	c.spark.set(st.history, col)
@@ -264,15 +269,15 @@ func (c *deviceCard) applyStatus() {
 	c.clock.Text = ""
 	if st.known && st.online {
 		if st.info.ClockKnown {
-			c.clock.Text, c.clock.Color = "NTP ✓", colOnline
+			c.clock.Text, c.clock.Color = "NTP ok", colOnline
 			if !st.info.ClockSynced {
 				c.clock.Text, c.clock.Color = "Clock not synced", colWarn
 			}
 		}
 	}
 
-	showPill(c.inUse, c.inUseTx, st.online && st.info.ActiveClient != "", "● In use by "+st.info.ActiveClient)
-	showPill(c.update, c.updTx, st.online && scan.NewerVersion(st.latest, st.info.Version), "↑ Update "+st.latest+" available")
+	showPill(c.inUse, c.inUseTx, st.online && st.info.ActiveClient != "", "In use by "+st.info.ActiveClient)
+	showPill(c.update, c.updTx, st.online && scan.NewerVersion(st.latest, st.info.Version), "Update "+st.latest+" available")
 	if c.inUse.Visible() || c.update.Visible() {
 		c.pills.Show()
 	} else {

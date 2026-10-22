@@ -34,10 +34,13 @@ const (
 	statusInterval = 5 * time.Second
 )
 
-//go:embed Icon.png
+// The 1024 px Icon.png is only for the app bundle; a 256 px copy is plenty
+// for the window and header and is much cheaper to decode at startup.
+//
+//go:embed docs/icon.png
 var iconPNG []byte
 
-var appIcon = fyne.NewStaticResource("Icon.png", iconPNG)
+var appIcon = fyne.NewStaticResource("icon.png", iconPNG)
 
 type ui struct {
 	app      fyne.App
@@ -245,7 +248,7 @@ func (u *ui) build() fyne.CanvasObject {
 	u.empty = container.NewVBox(layout.NewSpacer(), emptyTitle, emptyBody, layout.NewSpacer())
 	u.empty.Hide()
 
-	u.hint = canvas.NewText("Double-click to open · ☆ to keep as favorite", colFaint)
+	u.hint = canvas.NewText("Double-click to open · star to keep as favorite", colFaint)
 	u.hint.TextSize = 11
 	u.hint.Alignment = fyne.TextAlignCenter
 	u.hint.Hide()
