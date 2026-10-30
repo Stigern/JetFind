@@ -1,0 +1,72 @@
+# Builds the Windows and Linux versions. Every push to a branch other than
+# main, and every manual run, leaves test downloads under the run's Artifacts.
+# A v* tag also attaches them to that GitHub release, creating it if needed.
+# The macOS build stays on build-mac.sh.
+name: Build
+
+on:
+  push:
+    branches-ignore: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./scan ./store
+      - run: go install fyne.io/tools/cmd/fyne@v1.7.3
+      - run: fyne package --os windows --release
+      - name: Zip
+        run: 7z a "JetFind-$(sed -n 's/^Version = "\(.*\)"/\1/p' FyneApp.toml)-windows.zip" JetFind.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: JetFind-*-windows.zip
+
+  linux:
+    # The oldest supported runner, so the binary also runs on older distros.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install Fyne's build dependencies
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libgl1-mesa-dev libwayland-dev libx11-dev libxkbcommon-dev xorg-dev
+      - run: go test ./scan ./store
+      - run: go install fyne.io/tools/cmd/fyne@v1.7.3
+      - run: fyne package --os linux --release
+      - name: Rename
+        run: mv JetFind.tar.xz "JetFind-$(sed -n 's/^Version = "\(.*\)"/\1/p' FyneApp.toml)-linux.tar.xz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: JetFind-*-linux.tar.xz
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Attach to the release
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "JetFind ${TAG#v}" --generate-notes
+          gh release upload "$TAG" JetFind-* --clobber

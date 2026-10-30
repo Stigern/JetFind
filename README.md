@@ -55,6 +55,26 @@ The app is not notarized by Apple, so the first launch is blocked. To open it, g
 xattr -dr com.apple.quarantine /Applications/JetFind.app
 ```
 
+## Install (Windows)
+
+Download `JetFind-<version>-windows.zip` from the [latest release](https://github.com/Stigern/JetFind/releases/latest), unzip it and run `JetFind.exe`.
+
+The app is not code-signed, so Windows SmartScreen may warn you on first launch. To open it, click **More info**, then **Run anyway**.
+
+## Install (Linux)
+
+Requires 64-bit Intel/AMD Linux and `make` (`sudo apt install make` on Ubuntu). Download `JetFind-<version>-linux.tar.xz` from the [latest release](https://github.com/Stigern/JetFind/releases/latest), then unpack and install it:
+
+```bash
+tar -xf JetFind-*-linux.tar.xz
+```
+
+```bash
+cd jetfind && sudo make install
+```
+
+JetFind then appears in your applications menu. It runs on both Wayland and X11.
+
 ## Build from source (macOS)
 
 Requires [Go](https://go.dev) 1.27 or newer and the Xcode command line tools.
@@ -72,7 +92,13 @@ The first time it runs, macOS asks whether JetFind may find devices on your loca
 
 ### Windows and Linux
 
-The code is cross-platform ([Fyne](https://fyne.io) GUI, Go standard library networking), but only the macOS build has been tested so far. Fyne needs cgo and a C compiler, so build on the target OS with `fyne package --os windows` or `fyne package --os linux`, or use [fyne-cross](https://github.com/fyne-io/fyne-cross).
+[Fyne](https://fyne.io) needs cgo and a C compiler, so build on the target OS with `fyne package --os windows` or `fyne package --os linux`, or use [fyne-cross](https://github.com/fyne-io/fyne-cross). On Ubuntu, install the dependencies first:
+
+```bash
+sudo apt-get install libgl1-mesa-dev libwayland-dev libx11-dev libxkbcommon-dev xorg-dev
+```
+
+The release builds come from [`.github/workflows/build.yml`](.github/workflows/build.yml). Pushing a branch leaves test downloads under that run's Artifacts, and pushing a `v*` tag attaches the Windows and Linux files to the release. The macOS zip is still built with `build-mac.sh`.
 
 ## Development
 

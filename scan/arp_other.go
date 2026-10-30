@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build !darwin && !windows
 
 package scan
 
@@ -20,11 +20,7 @@ func lookupARP(ip string) string {
 			}
 		}
 	}
-	args := []string{"-n", ip}
-	if runtime.GOOS == "windows" {
-		args = []string{"-a", ip}
-	}
-	out, err := exec.Command("arp", args...).Output()
+	out, err := exec.Command("arp", "-n", ip).Output()
 	if err != nil {
 		return ""
 	}
