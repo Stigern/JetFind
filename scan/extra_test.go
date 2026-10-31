@@ -1,6 +1,9 @@
 package scan
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNewerVersion(t *testing.T) {
 	cases := []struct {
@@ -31,8 +34,31 @@ func TestParseARP(t *testing.T) {
 		"192.168.1.18 0x1 0x0 00:00:00:00:00:00 * eth0":                  "",
 	}
 	for in, want := range cases {
-		if got := parseARP(in); got != want {
+		ip := "192.168.1.18"
+		if strings.Contains(in, "192.168.1.50") {
+			ip = "192.168.1.50"
+		}
+		if got := parseARP(ip, in); got != want {
 			t.Errorf("parseARP(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestParseARPMatchesQueriedIP(t *testing.T) {
+	windows := "Interface: 192.168.1.10 --- 0x3\n" +
+		"  Internet Address      Physical Address      Type\n" +
+		"  192.168.1.21          30-52-53-00-1a-2b     dynamic\n" +
+		"  192.168.1.50          aa-bb-cc-dd-ee-ff     dynamic\n"
+	cases := []struct{ ip, out, want string }{
+		{"192.168.1.50", windows, "aa:bb:cc:dd:ee:ff"},
+		{"192.168.1.5", windows, ""}, // .5 is not .50
+		{"192.168.1.60", windows, ""},
+		{"192.168.1.1", "? (192.168.1.1) at 74:ac:b9:4a:a:ee on en0 ifscope [ethernet]", "74:ac:b9:4a:0a:ee"},
+		{"192.168.1.50", "192.168.1.50 ether ff-ff-ff-ff-ff-ff C eth0", ""},
+	}
+	for _, c := range cases {
+		if got := parseARP(c.ip, c.out); got != c.want {
+			t.Errorf("parseARP(%q, %q) = %q, want %q", c.ip, c.out, got, c.want)
 		}
 	}
 }

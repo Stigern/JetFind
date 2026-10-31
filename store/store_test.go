@@ -98,3 +98,58 @@ func TestAgo(t *testing.T) {
 		t.Errorf("Ago(zero) = %q", got)
 	}
 }
+
+func TestLearningMACMergesIPEntry(t *testing.T) {
+	p := memPrefs{}
+	s := Open(p)
+	byIP := Entry{IP: dev.IP, Hostname: dev.Hostname}
+	s.SetFavorite(byIP, true)
+	s.SetName(byIP, "Office PC")
+
+	s.SetFavorite(dev, true)
+
+	favs := Open(p).Favorites()
+	if len(favs) != 1 || favs[0].Name != "Office PC" || favs[0].MAC != "30:52:53:00:1a:2b" {
+		t.Fatalf("Favorites() = %+v", favs)
+	}
+	s.SetFavorite(dev, false)
+	s.SetName(dev, "")
+	if favs := Open(p).Favorites(); len(favs) != 0 {
+		t.Fatalf("after unstarring, Favorites() = %+v", favs)
+	}
+}
+
+func TestSeenWithMACMergesIPEntry(t *testing.T) {
+	p := memPrefs{}
+	s := Open(p)
+	s.SetFavorite(Entry{IP: dev.IP}, true)
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	s.Seen(dev, at)
+
+	e, ok := Open(p).Get(Key(dev.MAC, dev.IP))
+	if !ok || !e.Favorite || !e.LastSeen.Equal(at) {
+		t.Fatalf("entry = %+v, ok=%v", e, ok)
+	}
+	if _, ok := Open(p).Get(Key("", dev.IP)); ok {
+		t.Fatal("ip-keyed entry was kept")
+	}
+}
+
+func TestOpenMergesSavedDuplicates(t *testing.T) {
+	p := memPrefs{prefsKey: `[{"ip":"192.168.1.21","name":"Office PC","favorite":true},
+		{"mac":"30:52:53:00:1a:2b","ip":"192.168.1.21","favorite":true}]`}
+	favs := Open(p).Favorites()
+	if len(favs) != 1 || favs[0].Name != "Office PC" || favs[0].MAC == "" {
+		t.Fatalf("Favorites() = %+v", favs)
+	}
+}
+
+func TestMACEntryAtOtherIPIsNotMerged(t *testing.T) {
+	s := Open(memPrefs{})
+	s.SetFavorite(Entry{IP: "192.168.1.30"}, true)
+	s.SetFavorite(dev, true)
+	if favs := s.Favorites(); len(favs) != 2 {
+		t.Fatalf("Favorites() = %+v", favs)
+	}
+}

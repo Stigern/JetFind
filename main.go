@@ -359,7 +359,7 @@ func (u *ui) setSubtitle(s string) {
 func (u *ui) add(d scan.Device) {
 	u.found++
 	c := u.ensureCard(d)
-	u.store.Seen(entryOf(d), time.Now())
+	u.store.Seen(entryOf(c.dev), time.Now())
 	u.refresh(c)
 }
 
@@ -369,6 +369,18 @@ func (u *ui) ensureCard(d scan.Device) *deviceCard {
 	if d.URL == "" {
 		d.URL = "http://" + d.IP
 	}
+	// ARP can lag behind a scan, so the same device may arrive with or
+	// without its MAC. A MAC that differs from the card's is another device.
+	if c := u.cardAt(d.IP); c != nil {
+		if d.MAC == "" {
+			d.MAC = c.dev.MAC
+		} else if c.dev.MAC == "" {
+			delete(u.byKey, c.key)
+			c.key = store.Key(d.MAC, d.IP)
+			u.byKey[c.key] = c
+		}
+	}
+	u.store.Adopt(entryOf(d))
 	key := store.Key(d.MAC, d.IP)
 	saved, _ := u.store.Get(key)
 	if d.Name == "" || d.Name == "JetKVM" && saved.Hostname != "" {
@@ -391,6 +403,16 @@ func (u *ui) ensureCard(d scan.Device) *deviceCard {
 	c.setIdentity(d, saved.Name, saved.Favorite)
 	u.relayout()
 	return c
+}
+
+// cardAt returns the card currently at ip, if any.
+func (u *ui) cardAt(ip string) *deviceCard {
+	for _, c := range u.cards {
+		if c.dev.IP == ip {
+			return c
+		}
+	}
+	return nil
 }
 
 func (u *ui) remove(c *deviceCard) {

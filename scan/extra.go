@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const releasesURL = "https://api.github.com/repos/jetkvm/kvm/releases/latest"
@@ -85,17 +87,23 @@ var macRE = regexp.MustCompile(`(?i)\b([0-9a-f]{1,2}(?:[:-][0-9a-f]{1,2}){5})\b`
 // hosts on the same network segment, which a scanned JetKVM always is.
 func MACAddress(ip string) string { return lookupARP(ip) }
 
-// parseARP extracts the first MAC address from arp output.
-func parseARP(out string) string {
-	m := macRE.FindStringSubmatch(out)
-	if m == nil {
-		return ""
+// parseARP extracts the MAC address of ip from arp output, which may hold
+// rows for other hosts.
+func parseARP(ip, out string) string {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.FieldsFunc(line, func(r rune) bool { return unicode.IsSpace(r) || r == '(' || r == ')' })
+		if !slices.Contains(fields, ip) {
+			continue
+		}
+		if m := macRE.FindStringSubmatch(line); m != nil {
+			return normalizeMAC(m[1])
+		}
 	}
-	return normalizeMAC(m[1])
+	return ""
 }
 
 // normalizeMAC lower-cases a MAC and zero-pads each byte (macOS prints
-// "30:52:53:9:a2:fe"); all-zero entries are treated as unknown.
+// "30:52:53:9:a2:fe"); all-zero and broadcast entries are treated as unknown.
 func normalizeMAC(s string) string {
 	parts := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return r == ':' || r == '-' })
 	if len(parts) != 6 {
@@ -107,7 +115,7 @@ func normalizeMAC(s string) string {
 		}
 	}
 	mac := strings.Join(parts, ":")
-	if mac == "00:00:00:00:00:00" {
+	if mac == "00:00:00:00:00:00" || mac == "ff:ff:ff:ff:ff:ff" {
 		return ""
 	}
 	return mac
