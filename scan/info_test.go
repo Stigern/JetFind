@@ -95,3 +95,22 @@ func TestFetchInfoLargeMetrics(t *testing.T) {
 		t.Fatalf("ok=%v clockKnown=%v uptime=%v; metrics past 64 KB were dropped", ok, info.ClockKnown, info.Uptime)
 	}
 }
+
+func TestFetchInfoReachableWhenConnectMeasuresZero(t *testing.T) {
+	since = func(time.Time) time.Duration { return 0 }
+	defer func() { since = time.Since }()
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+	if _, ok := FetchInfo(context.Background(), Device{URL: srv.URL}); !ok {
+		t.Fatal("a device that accepted the connection was reported as not answering")
+	}
+}
+
+func TestFetchInfoUnreachable(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL
+	srv.Close()
+	if _, ok := FetchInfo(context.Background(), Device{URL: url}); ok {
+		t.Fatal("a closed port was reported as answering")
+	}
+}
