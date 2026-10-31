@@ -2,5 +2,5 @@
 Icon = "Icon.png"
 Name = "JetFind"
 ID = "no.stig.jetfind"
-Version = "0.3.0"
-Build = 32
+Version = "0.3.1"
+Build = 34
