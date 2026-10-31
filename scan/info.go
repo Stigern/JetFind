@@ -14,7 +14,7 @@ import (
 // Info is live status for a JetKVM, read from its unauthenticated
 // /device/status and Prometheus /metrics endpoints.
 type Info struct {
-	Latency        time.Duration // TCP connect time; 0 if unreachable
+	Latency        time.Duration // TCP connect time; 0 if unreachable or too short to measure
 	Version        string        // firmware version, e.g. "0.5.9"
 	Uptime         time.Duration // 0 when unknown
 	IsSetup        bool
@@ -41,8 +41,8 @@ func FetchInfo(ctx context.Context, d Device) (Info, bool) {
 	if _, _, err := net.SplitHostPort(addr); err != nil {
 		addr = net.JoinHostPort(addr, "80")
 	}
-	info.Latency = latency(ctx, addr)
-	if info.Latency == 0 {
+	var ok bool
+	if info.Latency, ok = latency(ctx, addr); !ok {
 		return info, false
 	}
 
@@ -60,9 +60,12 @@ func FetchInfo(ctx context.Context, d Device) (Info, bool) {
 	return info, true
 }
 
-// latency returns the fastest of three TCP connects, or 0 if all fail.
-func latency(ctx context.Context, addr string) time.Duration {
-	var best time.Duration
+// since is time.Since, swappable because a coarse clock is hard to come by in
+// tests: on Windows a connect shorter than a clock tick measures exactly 0.
+var since = time.Since
+
+// latency returns the fastest of three TCP connects; ok is false if all fail.
+func latency(ctx context.Context, addr string) (best time.Duration, ok bool) {
 	d := net.Dialer{Timeout: time.Second}
 	for range 3 {
 		start := time.Now()
@@ -70,13 +73,13 @@ func latency(ctx context.Context, addr string) time.Duration {
 		if err != nil {
 			continue
 		}
-		rtt := time.Since(start)
+		rtt := since(start)
 		conn.Close()
-		if best == 0 || rtt < best {
-			best = rtt
+		if !ok || rtt < best {
+			best, ok = rtt, true
 		}
 	}
-	return best
+	return best, ok
 }
 
 type sample struct {
