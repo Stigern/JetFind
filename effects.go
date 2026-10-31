@@ -149,6 +149,9 @@ func newSparkline() *sparkline {
 }
 
 func (s *sparkline) set(values []time.Duration, c color.Color) {
+	if len(values) > sparkSamples {
+		values = values[len(values)-sparkSamples:]
+	}
 	s.values, s.col = values, c
 	s.Refresh()
 }

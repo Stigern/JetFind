@@ -24,5 +24,5 @@ func lookupARP(ip string) string {
 	if err != nil {
 		return ""
 	}
-	return parseARP(string(out))
+	return parseARP(ip, string(out))
 }

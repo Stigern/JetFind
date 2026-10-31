@@ -47,6 +47,7 @@ type deviceCard struct {
 	status   deviceStatus
 	favorite bool
 	custom   string // user-given name, empty for the hostname
+	hovered  bool
 	act      cardActions
 
 	nameTx *canvas.Text
@@ -121,6 +122,13 @@ func (c *deviceCard) startRename() {
 func (c *deviceCard) endRename(name string, ok bool) {
 	c.editor.Hide()
 	c.nameTx.Show()
+	if c.hovered {
+		c.pencil.Show() // MouseIn won't fire again for a pointer already inside
+	}
+	// Fyne keeps focus on hidden widgets.
+	if cv := fyne.CurrentApp().Driver().CanvasForObject(c); cv != nil {
+		cv.Unfocus()
+	}
 	if ok {
 		c.act.rename(c, name)
 	}
@@ -350,6 +358,7 @@ func (c *deviceCard) DoubleTapped(*fyne.PointEvent) {
 }
 
 func (c *deviceCard) MouseIn(*desktop.MouseEvent) {
+	c.hovered = true
 	animateUniform(&c.hoverAnim, c.glass, "hover", 1, 200*time.Millisecond)
 	if !c.editor.Visible() {
 		c.pencil.Show()
@@ -372,6 +381,7 @@ func (c *deviceCard) MouseDown(ev *desktop.MouseEvent) {
 func (c *deviceCard) MouseUp(*desktop.MouseEvent) {}
 
 func (c *deviceCard) MouseOut() {
+	c.hovered = false
 	animateUniform(&c.hoverAnim, c.glass, "hover", 0, 300*time.Millisecond)
 	c.pencil.Hide()
 }
