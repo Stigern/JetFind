@@ -151,3 +151,15 @@ func TestDifferentMACAtSameIPIsAnotherDevice(t *testing.T) {
 		t.Fatalf("cards=%d", len(u.cards))
 	}
 }
+
+func TestUnknownSetupIsNotNotSetUp(t *testing.T) {
+	c, _, _ := testCard(t)
+	c.setStatus(deviceStatus{known: true, online: true})
+	if c.details.Text != "" {
+		t.Errorf("failed fetch shows %q", c.details.Text)
+	}
+	c.setStatus(deviceStatus{known: true, online: true, info: scan.Info{SetupKnown: true}})
+	if c.details.Text != "Not set up" {
+		t.Errorf("real answer shows %q", c.details.Text)
+	}
+}

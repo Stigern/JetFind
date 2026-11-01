@@ -114,3 +114,48 @@ func TestFetchInfoUnreachable(t *testing.T) {
 		t.Fatal("a closed port was reported as answering")
 	}
 }
+
+func TestFetchInfoFailedRequestsAreUnknown(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	info, ok := FetchInfo(context.Background(), Device{URL: srv.URL})
+	if !ok || info.SetupKnown || info.MetricsKnown {
+		t.Fatalf("ok=%v info=%+v", ok, info)
+	}
+}
+
+func TestFetchInfoReadsSetupAndMetrics(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/device/status" {
+			fmt.Fprint(w, `{"isSetup":false}`)
+			return
+		}
+		fmt.Fprint(w, sampleMetrics)
+	}))
+	defer srv.Close()
+	info, _ := FetchInfo(context.Background(), Device{URL: srv.URL})
+	if !info.SetupKnown || info.IsSetup || !info.MetricsKnown || info.Version != "0.5.9" {
+		t.Fatalf("%+v", info)
+	}
+}
+
+func TestCarry(t *testing.T) {
+	prev := Info{Latency: time.Second, IsSetup: true, SetupKnown: true, MetricsKnown: true, Version: "0.5.9", ActiveClient: "192.168.1.50"}
+
+	got := Info{Latency: time.Millisecond}.Carry(prev)
+	if got.Latency != time.Millisecond || !got.IsSetup || !got.SetupKnown || got.Version != "0.5.9" || got.ActiveClient != "192.168.1.50" {
+		t.Errorf("nothing read: %+v", got)
+	}
+
+	got = Info{SetupKnown: true}.Carry(prev)
+	if got.IsSetup || got.Version != "0.5.9" {
+		t.Errorf("setup read, metrics failed: %+v", got)
+	}
+
+	got = Info{MetricsKnown: true, Version: "0.6.0"}.Carry(prev)
+	if !got.IsSetup || got.Version != "0.6.0" || got.ActiveClient != "" {
+		t.Errorf("metrics read, setup failed: %+v", got)
+	}
+}

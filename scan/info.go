@@ -18,6 +18,8 @@ type Info struct {
 	Version        string        // firmware version, e.g. "0.5.9"
 	Uptime         time.Duration // 0 when unknown
 	IsSetup        bool
+	SetupKnown     bool // whether /device/status gave an answer
+	MetricsKnown   bool // whether /metrics could be read
 	CloudConnected bool
 	ActiveClient   string // IP of a browser with a live session, if any
 	ClockKnown     bool   // whether the time-sync metric was present
@@ -48,16 +50,31 @@ func FetchInfo(ctx context.Context, d Device) (Info, bool) {
 
 	if body, ok := get(ctx, d.URL+"/device/status", "application/json"); ok {
 		var s struct {
-			IsSetup bool `json:"isSetup"`
+			IsSetup *bool `json:"isSetup"`
 		}
-		if json.Unmarshal(body, &s) == nil {
-			info.IsSetup = s.IsSetup
+		if json.Unmarshal(body, &s) == nil && s.IsSetup != nil {
+			info.IsSetup, info.SetupKnown = *s.IsSetup, true
 		}
 	}
 	if body, ok := getLimit(ctx, d.URL+"/metrics", "text/plain", metricsLimit); ok {
 		applyMetrics(&info, parseMetrics(body), time.Now())
+		info.MetricsKnown = true
 	}
 	return info, true
+}
+
+// Carry fills in what this fetch could not read from prev, the previous
+// reading, so one slow response doesn't blank part of a card.
+func (i Info) Carry(prev Info) Info {
+	if !i.SetupKnown {
+		i.IsSetup, i.SetupKnown = prev.IsSetup, prev.SetupKnown
+	}
+	if !i.MetricsKnown {
+		latency, isSetup, setupKnown := i.Latency, i.IsSetup, i.SetupKnown
+		i = prev
+		i.Latency, i.IsSetup, i.SetupKnown = latency, isSetup, setupKnown
+	}
+	return i
 }
 
 // since is time.Since, swappable because a coarse clock is hard to come by in

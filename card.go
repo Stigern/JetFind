@@ -254,7 +254,7 @@ func (c *deviceCard) applyStatus() {
 		parts = append(parts, "last seen "+store.Ago(st.lastSeen, time.Now()))
 	}
 	if st.known && st.online {
-		if !st.info.IsSetup {
+		if st.info.SetupKnown && !st.info.IsSetup {
 			parts = append(parts, "Not set up")
 			c.details.Color = colWarn
 		}
