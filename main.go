@@ -123,15 +123,15 @@ func (u *ui) showDemo() {
 		hist   []time.Duration
 	}{
 		{scan.Device{Name: "jetkvm-office", IP: "192.168.1.21", MAC: "30:52:53:00:1a:2b"},
-			scan.Info{Version: "0.6.0", Uptime: 12*day + 5*time.Hour, IsSetup: true, ClockKnown: true, ClockSynced: true},
+			scan.Info{Version: "0.6.0", Uptime: 12*day + 5*time.Hour, IsSetup: true, SetupKnown: true, ClockKnown: true, ClockSynced: true},
 			true, true, "Office PC", ms(3, 3, 4, 3, 2, 3, 5, 3, 3, 4, 3, 3, 2, 3, 3, 4, 3, 3)},
 		{scan.Device{Name: "jetkvm-rack", IP: "192.168.1.22", MAC: "30:52:53:00:3c:4d"},
-			scan.Info{Version: "0.6.0", Uptime: 3*day + 9*time.Hour, IsSetup: true, ClockKnown: true, ClockSynced: true, ActiveClient: "192.168.1.50"},
+			scan.Info{Version: "0.6.0", Uptime: 3*day + 9*time.Hour, IsSetup: true, SetupKnown: true, ClockKnown: true, ClockSynced: true, ActiveClient: "192.168.1.50"},
 			true, true, "", ms(4, 5, 4, 6, 9, 5, 4, 4, 5, 7, 4, 4, 5, 4, 6, 5, 4, 5)},
 		{scan.Device{Name: "jetkvm-garage", IP: "192.168.1.24", MAC: "30:52:53:00:7a:8b"},
 			scan.Info{}, false, true, "Garage NAS", nil},
 		{scan.Device{Name: "jetkvm-lab", IP: "192.168.1.23", MAC: "30:52:53:00:5e:6f"},
-			scan.Info{Version: "0.5.9", Uptime: 41*day + 2*time.Hour, IsSetup: true, CloudConnected: true, ClockKnown: true, ClockSynced: true},
+			scan.Info{Version: "0.5.9", Uptime: 41*day + 2*time.Hour, IsSetup: true, SetupKnown: true, CloudConnected: true, ClockKnown: true, ClockSynced: true},
 			true, false, "", ms(6, 5, 7, 6, 12, 8, 6, 6, 7, 6, 5, 6, 9, 7, 6, 6, 5, 6)},
 	}
 	for _, d := range devices {
@@ -203,6 +203,9 @@ func (u *ui) refresh(c *deviceCard) {
 				return // card removed or moved while we were fetching
 			}
 			st := c.status
+			if online {
+				info = info.Carry(st.info)
+			}
 			st.info, st.known, st.online, st.latest = info, true, online, u.latest
 			if mac != "" && online {
 				st.mac = mac
