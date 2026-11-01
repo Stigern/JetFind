@@ -98,7 +98,7 @@ The first time it runs, macOS asks whether JetFind may find devices on your loca
 sudo apt-get install libgl1-mesa-dev libwayland-dev libx11-dev libxkbcommon-dev xorg-dev
 ```
 
-The release builds come from [`.github/workflows/build.yml`](.github/workflows/build.yml). Pushing a branch leaves test downloads under that run's Artifacts, and pushing a `v*` tag attaches the Windows and Linux files to the release. The macOS zip is still built with `build-mac.sh`.
+The release builds come from [`.github/workflows/build.yml`](.github/workflows/build.yml). Pushing a branch leaves test downloads under that run's Artifacts, and pushing a `v*` tag attaches the macOS, Windows and Linux files to the release.
 
 ## Development
 
