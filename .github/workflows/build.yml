@@ -24,7 +24,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go test ./scan ./store
+      - run: go test ./...
       - run: go install fyne.io/tools/cmd/fyne@v1.7.3
       - run: fyne package --os windows --release
       - name: Zip
@@ -44,7 +44,7 @@ jobs:
           go-version-file: go.mod
       - name: Install Fyne's build dependencies
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libgl1-mesa-dev libwayland-dev libx11-dev libxkbcommon-dev xorg-dev
-      - run: go test ./scan ./store
+      - run: go test ./...
       - run: go install fyne.io/tools/cmd/fyne@v1.7.3
       - run: fyne package --os linux --release
       - name: Rename

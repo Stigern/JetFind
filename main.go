@@ -32,6 +32,9 @@ const (
 	blockedRetries = 15
 	blockedDelay   = 2 * time.Second
 	statusInterval = 5 * time.Second
+
+	releaseInterval = time.Hour
+	releaseRetry    = time.Minute
 )
 
 // The 1024 px Icon.png is only for the app bundle; a 256 px copy is plenty
@@ -147,17 +150,20 @@ func (u *ui) showDemo() {
 	u.finish("192.168.1.0/24")
 }
 
-// checkRelease looks up the newest firmware on GitHub, retrying hourly so
-// a long-running window still notices new releases.
+// checkRelease looks up the newest firmware on GitHub, hourly so a
+// long-running window still notices new releases, and again soon after a
+// failure, such as starting before the network is up.
 func (u *ui) checkRelease() {
 	for {
+		wait := releaseRetry
 		if v, err := scan.LatestRelease(context.Background()); err == nil {
+			wait = releaseInterval
 			fyne.Do(func() {
 				u.latest = v
 				u.refreshAll()
 			})
 		}
-		time.Sleep(time.Hour)
+		time.Sleep(wait)
 	}
 }
 
