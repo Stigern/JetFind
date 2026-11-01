@@ -74,6 +74,10 @@ type deviceCard struct {
 
 const cardRadius = 14
 
+// maxTextWidth keeps a card's text lines inside the default window. Text
+// sets a window's minimum size, so a long name would otherwise widen it.
+const maxTextWidth = 170
+
 func newDeviceCard(key string, dev scan.Device, st deviceStatus, act cardActions) *deviceCard {
 	c := &deviceCard{key: key, dev: dev, status: st, act: act}
 	c.ExtendBaseWidget(c)
@@ -94,10 +98,10 @@ func (c *deviceCard) setIdentity(dev scan.Device, custom string, favorite bool) 
 	if c.nameTx == nil {
 		return
 	}
-	c.nameTx.Text = c.title()
+	c.nameTx.Text = fitText(c.title(), c.nameTx)
 	c.ipTx.Text = dev.IP
 	if custom != "" {
-		c.ipTx.Text = dev.IP + " · " + dev.Name
+		c.ipTx.Text = fitText(dev.IP+" · "+dev.Name, c.ipTx)
 	}
 	c.star.setIcon(starOff)
 	if favorite {
@@ -105,6 +109,21 @@ func (c *deviceCard) setIdentity(dev scan.Device, custom string, favorite bool) 
 	}
 	c.nameTx.Refresh()
 	c.ipTx.Refresh()
+}
+
+// fitText shortens s with an ellipsis until it fits maxTextWidth in t's style.
+func fitText(s string, t *canvas.Text) string {
+	fits := func(s string) bool {
+		return fyne.MeasureText(s, t.TextSize, t.TextStyle).Width <= maxTextWidth
+	}
+	if fits(s) {
+		return s
+	}
+	r := []rune(s)
+	for len(r) > 0 && !fits(string(r)+"…") {
+		r = r[:len(r)-1]
+	}
+	return string(r) + "…"
 }
 
 // startRename swaps the name for an editor.

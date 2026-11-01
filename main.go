@@ -384,9 +384,14 @@ func (u *ui) ensureCard(d scan.Device) *deviceCard {
 		if d.MAC == "" {
 			d.MAC = c.dev.MAC
 		} else if c.dev.MAC == "" {
+			key := store.Key(d.MAC, d.IP)
+			// A card already holding this MAC is stale: the device is here.
+			if old := u.byKey[key]; old != nil {
+				u.remove(old)
+			}
 			delete(u.byKey, c.key)
-			c.key = store.Key(d.MAC, d.IP)
-			u.byKey[c.key] = c
+			c.key = key
+			u.byKey[key] = c
 		}
 	}
 	u.store.Adopt(entryOf(d))
