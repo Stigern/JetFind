@@ -162,6 +162,8 @@ func TestUnknownSetupIsNotNotSetUp(t *testing.T) {
 	c.setStatus(deviceStatus{known: true, online: true, info: scan.Info{SetupKnown: true}})
 	if c.details.Text != "Not set up" {
 		t.Errorf("real answer shows %q", c.details.Text)
+	}
+}
 
 func TestLearningMACReplacesStaleCard(t *testing.T) {
 	u := newTestUI(t)
