@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -161,5 +162,50 @@ func TestUnknownSetupIsNotNotSetUp(t *testing.T) {
 	c.setStatus(deviceStatus{known: true, online: true, info: scan.Info{SetupKnown: true}})
 	if c.details.Text != "Not set up" {
 		t.Errorf("real answer shows %q", c.details.Text)
+	}
+}
+
+func TestLearningMACReplacesStaleCard(t *testing.T) {
+	u := newTestUI(t)
+	moved := scan.Device{Name: "jetkvm", IP: "192.168.1.20", MAC: testMAC}
+	u.store.SetFavorite(entryOf(moved), true)
+	u.ensureCard(moved)
+	noMAC := scan.Device{Name: "jetkvm", IP: "192.168.1.30"}
+	u.store.SetFavorite(entryOf(noMAC), true)
+	here := u.ensureCard(noMAC)
+
+	noMAC.MAC = testMAC
+	c := u.ensureCard(noMAC)
+
+	if len(u.cards) != 1 || c != here || u.byKey[testMAC] != c || len(u.holders) != 1 {
+		t.Fatalf("cards=%d same=%v byKey=%v holders=%d", len(u.cards), c == here, u.byKey, len(u.holders))
+	}
+	if c.dev.IP != "192.168.1.30" || !c.favorite {
+		t.Errorf("ip=%q favorite=%v", c.dev.IP, c.favorite)
+	}
+}
+
+func TestLongNamesDoNotWidenCard(t *testing.T) {
+	c, _, _ := testCard(t)
+	base := c.MinSize().Width
+	long := strings.Repeat("W", 200)
+	c.setIdentity(scan.Device{Name: long, IP: c.dev.IP}, long, false)
+	c.Refresh()
+	if w := c.MinSize().Width; w > base+maxTextWidth {
+		t.Errorf("min width %v -> %v", base, w)
+	}
+	if !strings.HasSuffix(c.nameTx.Text, "…") || !strings.HasSuffix(c.ipTx.Text, "…") {
+		t.Errorf("name=%q ip=%q", c.nameTx.Text, c.ipTx.Text)
+	}
+	if c.title() != long {
+		t.Error("the full name should stay available to the editor")
+	}
+}
+
+func TestShortNamesAreNotShortened(t *testing.T) {
+	c, _, _ := testCard(t)
+	c.setIdentity(c.dev, "Office PC", false)
+	if c.nameTx.Text != "Office PC" {
+		t.Errorf("name=%q", c.nameTx.Text)
 	}
 }
