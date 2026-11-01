@@ -1,7 +1,6 @@
-# Builds the Windows and Linux versions. Every push to a branch other than
+# Builds the macOS, Windows and Linux versions. Every push to a branch other than
 # main, and every manual run, leaves test downloads under the run's Artifacts.
 # A v* tag also attaches them to that GitHub release, creating it if needed.
-# The macOS build stays on build-mac.sh.
 name: Build
 
 on:
@@ -14,6 +13,23 @@ permissions:
   contents: write
 
 jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - run: go install fyne.io/tools/cmd/fyne@v1.7.3
+      - run: ./build-mac.sh
+      - name: Zip
+        run: ditto -c -k --keepParent JetFind.app "JetFind-$(sed -n 's/^Version = "\(.*\)"/\1/p' FyneApp.toml)-macos.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: JetFind-*-macos.zip
+
   windows:
     runs-on: windows-latest
     defaults:
@@ -56,7 +72,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux]
+    needs: [macos, windows, linux]
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
